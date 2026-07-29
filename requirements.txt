@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+sqlalchemy
+langchain
+python-dotenv
+python-jose
+pytest
