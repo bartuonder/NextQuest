@@ -1,63 +1,61 @@
+from datetime import UTC, datetime
+
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from core.database import Base
-from sqlalchemy import Column, String, Integer, ForeignKey
+from core.enums import Category
 
 
-class User(Base):
-    __tablename__ = "users"
+class RecommendationBatch(Base):
+    """One LLM run: the taste snapshot that produced it plus its results."""
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    email = Column(String, unique=True, index=True)
-    first_name = Column(String)
-    middle_name = Column(String, nullable=True)
-    last_name = Column(String)
+    __tablename__ = "recommendation_batches"
 
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    model: Mapped[str] = mapped_column(String(80))
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mood: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    source_favorites: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
 
-class Movie(Base):
-    __tablename__ = "movies"
+    user: Mapped["User"] = relationship(back_populates="recommendations")  # noqa: F821
+    items: Mapped[list["RecommendationItem"]] = relationship(
+        back_populates="batch",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="RecommendationItem.id",
+    )
 
-    id = Column(Integer, primary_key=True, index=True)
-    first_movie = Column(String)
-    second_movie = Column(String, nullable=True)
-    third_movie = Column(String, nullable=True)
-    owner = Column(Integer, ForeignKey("users.id"))
-
-
-class Game(Base):
-    __tablename__ = "games"
-
-    id = Column(Integer, primary_key=True, index=True)
-    first_game = Column(String)
-    second_game = Column(String, nullable=True)
-    third_game = Column(String, nullable=True)
-    owner = Column(Integer, ForeignKey("users.id"))
+    def __repr__(self) -> str:  # pragma: no cover - debugging helper
+        return f"<RecommendationBatch id={self.id} items={len(self.items)}>"
 
 
-class TVSeries(Base):
-    __tablename__ = "tv_series"
+class RecommendationItem(Base):
+    """A single suggested title inside a batch."""
 
-    id = Column(Integer, primary_key=True, index=True)
-    first_serie = Column(String)
-    second_serie = Column(String, nullable=True)
-    third_serie = Column(String, nullable=True)
-    owner = Column(Integer, ForeignKey("users.id"))
+    __tablename__ = "recommendation_items"
 
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    batch_id: Mapped[int] = mapped_column(
+        ForeignKey("recommendation_batches.id", ondelete="CASCADE"), index=True
+    )
+    category: Mapped[Category] = mapped_column(
+        SQLEnum(Category, native_enum=False, length=20), index=True
+    )
+    title: Mapped[str] = mapped_column(String(200))
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reason: Mapped[str] = mapped_column(Text)
+    match_score: Mapped[int] = mapped_column(Integer, default=0)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
 
-class Anime(Base):
-    __tablename__ = "animes"
+    batch: Mapped[RecommendationBatch] = relationship(back_populates="items")
 
-    id = Column(Integer, primary_key=True, index=True)
-    first_anime = Column(String)
-    second_anime = Column(String, nullable=True)
-    third_anime = Column(String, nullable=True)
-    owner = Column(Integer, ForeignKey("users.id"))
-
-
-class Book(Base):
-    __tablename__ = "books"
-
-    id = Column(Integer, primary_key=True, index=True)
-    first_book = Column(String)
-    second_book = Column(String, nullable=True)
-    third_book = Column(String, nullable=True)
-    owner = Column(Integer, ForeignKey("users.id"))
+    def __repr__(self) -> str:  # pragma: no cover - debugging helper
+        return f"<RecommendationItem {self.category}:{self.title!r}>"
