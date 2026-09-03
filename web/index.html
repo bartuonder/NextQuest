@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NextQuest — your next favourite thing</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#127919;</text></svg>" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">◆</span>
+        <div>
+          <h1>NextQuest</h1>
+          <p class="tagline">Three titles you love. A whole list you will.</p>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span id="llm-badge" class="badge" hidden></span>
+        <span id="user-chip" class="chip" hidden></span>
+        <button id="logout-btn" class="btn ghost" hidden>Log out</button>
+      </div>
+    </header>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <main>
+      <!-- ---------------------------------------------------------- auth -->
+      <section id="auth-view" class="view" hidden>
+        <div class="card auth-card">
+          <div class="tabs">
+            <button class="tab active" data-auth-tab="login">Log in</button>
+            <button class="tab" data-auth-tab="register">Sign up</button>
+          </div>
+
+          <form id="login-form" class="stack">
+            <label>
+              Username or e-mail
+              <input name="username" autocomplete="username" required />
+            </label>
+            <label>
+              Password
+              <input name="password" type="password" autocomplete="current-password" required />
+            </label>
+            <button class="btn primary" type="submit">Log in</button>
+          </form>
+
+          <form id="register-form" class="stack" hidden>
+            <label>
+              Username
+              <input name="username" minlength="3" maxlength="50" pattern="[A-Za-z0-9_.\-]+" required />
+            </label>
+            <label>
+              E-mail
+              <input name="email" type="email" required />
+            </label>
+            <label>
+              Full name <span class="muted">(optional)</span>
+              <input name="full_name" maxlength="120" />
+            </label>
+            <label>
+              Password <span class="muted">(min. 8 characters)</span>
+              <input name="password" type="password" minlength="8" autocomplete="new-password" required />
+            </label>
+            <button class="btn primary" type="submit">Create account</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ----------------------------------------------------------- app -->
+      <section id="app-view" class="view" hidden>
+        <div class="columns">
+          <div class="card">
+            <h2>Your taste</h2>
+            <p class="muted">
+              List up to <strong id="samples-hint">3</strong> favourites per category.
+              Empty fields are simply ignored.
+            </p>
+            <form id="taste-form" class="stack">
+              <div id="taste-fields" class="taste-grid"></div>
+
+              <label>
+                Mood or constraint <span class="muted">(optional)</span>
+                <input id="mood" name="mood" maxlength="200" placeholder="something short and cosy for a rainy weekend" />
+              </label>
+
+              <label class="inline">
+                Suggestions per category
+                <select id="per-category">
+                  <option>1</option><option>2</option>
+                  <option selected>3</option>
+                  <option>4</option><option>5</option>
+                </select>
+              </label>
+
+              <div class="row">
+                <button class="btn primary" id="generate-btn" type="submit">Get recommendations</button>
+                <button class="btn ghost" id="save-taste-btn" type="button">Save profile only</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h2>History</h2>
+              <button class="btn ghost small" id="refresh-history">Refresh</button>
+            </div>
+            <ul id="history-list" class="history"></ul>
+          </div>
+        </div>
+
+        <div id="result" class="result" hidden>
+          <div class="card">
+            <div class="card-head">
+              <h2>Your picks</h2>
+              <span id="result-meta" class="muted small"></span>
+            </div>
+            <p id="result-summary" class="summary"></p>
+          </div>
+          <div id="result-groups"></div>
+        </div>
+
+        <div id="loading" class="loading" hidden>
+          <div class="spinner"></div>
+          <p>NextQuest is reading your taste…</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <a href="/docs">API docs</a> · <a href="https://github.com/bartuonder/NextQuest">GitHub</a>
+    </footer>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
