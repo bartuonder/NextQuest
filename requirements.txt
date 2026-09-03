@@ -1,8 +1,26 @@
-fastapi
-uvicorn
-pydantic
-sqlalchemy
-langchain
-python-dotenv
-python-jose
-pytest
+# --- Web layer ---
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+
+# --- Validation & settings ---
+pydantic[email]>=2.9
+pydantic-settings>=2.5
+python-dotenv>=1.0
+
+# --- Persistence ---
+SQLAlchemy>=2.0.30
+psycopg[binary]>=3.2
+
+# --- Auth ---
+python-jose[cryptography]>=3.3
+passlib>=1.7.4
+
+# --- LLM ---
+langchain>=0.3
+langchain-core>=0.3
+langchain-openai>=0.2
+
+# --- Tests ---
+pytest>=8.0
+httpx>=0.27
