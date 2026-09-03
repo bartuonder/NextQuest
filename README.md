@@ -68,12 +68,12 @@ With no `OPENAI_API_KEY` the app still boots and everything except
 ### Docker
 
 ```bash
-export OPENAI_API_KEY=sk-...     # Windows PowerShell: $env:OPENAI_API_KEY="sk-..."
 docker compose up --build
 ```
 
 That starts Postgres and the API on <http://localhost:8000>, with the schema created on
-startup.
+startup. The container reads the same `.env` you use locally, so the OpenAI key does not
+have to be exported separately; `DATABASE_URL` is the one value compose overrides.
 
 ## Configuration
 
