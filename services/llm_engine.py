@@ -48,6 +48,10 @@ Titles you must not suggest: {avoid}
 Return a summary of their taste plus the suggestions."""
 
 
+#: How many extra rounds may be spent chasing the titles the model left out.
+MAX_TOP_UP_ROUNDS = 2
+
+
 class LLMEngineError(RuntimeError):
     """Raised when the recommendation engine cannot produce a result."""
 
@@ -125,7 +129,10 @@ class RecommendationEngine:
         taste_block = _format_taste(favorites)
 
         result = self._invoke(
-            categories=wanted, per_category=per_category, taste_block=taste_block, mood=mood
+            categories_text=", ".join(category.label for category in wanted),
+            per_category=per_category,
+            taste_block=taste_block,
+            mood=mood,
         )
         kept = _post_process(
             result.recommendations,
@@ -134,22 +141,30 @@ class RecommendationEngine:
             already_owned=owned,
         )
 
-        # Models routinely return fewer titles than asked for, so one extra pass
-        # fills the gaps instead of handing the user a half-empty answer.
-        short = _underfilled(kept, wanted=wanted, per_category=per_category)
-        if short:
+        # Models routinely return fewer titles than asked for, and one extra pass
+        # is often still short, so keep asking for the gaps. The loop is bounded
+        # and stops as soon as a round adds nothing, which is the model telling us
+        # it has run out of ideas.
+        for _ in range(MAX_TOP_UP_ROUNDS):
+            missing = _deficits(kept, wanted=wanted, per_category=per_category)
+            if not missing:
+                break
             logger.info(
-                "Topping up %s", ", ".join(category.label for category in short)
+                "Topping up %s",
+                ", ".join(f"{c.label} x{n}" for c, n in missing.items()),
             )
+            before = len(kept)
             kept = self._top_up(
                 kept,
-                short=short,
+                missing=missing,
                 wanted=wanted,
                 per_category=per_category,
                 taste_block=taste_block,
                 mood=mood,
                 owned=owned,
             )
+            if len(kept) == before:
+                break
 
         if not kept:
             raise LLMEngineError("The model did not return any usable suggestion.")
@@ -160,24 +175,29 @@ class RecommendationEngine:
         self,
         kept: list[LLMRecommendation],
         *,
-        short: list[Category],
+        missing: dict[Category, int],
         wanted: list[Category],
         per_category: int,
         taste_block: str,
         mood: str | None,
         owned: set[str],
     ) -> list[LLMRecommendation]:
-        """Ask once more for the categories that came back light. Best effort only."""
+        """Ask again for the categories that came back light. Best effort only."""
         try:
             extra = self._invoke(
-                categories=short,
-                per_category=per_category,
+                # Spelling out the shortfall per category works far better than
+                # repeating the original request and hoping for a fuller answer.
+                categories_text=", ".join(
+                    f"{category.label} ({count} more needed)"
+                    for category, count in missing.items()
+                ),
+                per_category=max(missing.values()),
                 taste_block=taste_block,
                 mood=mood,
                 avoid=[item.title for item in kept],
             )
         except LLMEngineError:
-            logger.warning("Top-up pass failed; returning the first-pass suggestions")
+            logger.warning("Top-up pass failed; returning the suggestions collected so far")
             return kept
 
         return _post_process(
@@ -190,14 +210,14 @@ class RecommendationEngine:
     def _invoke(
         self,
         *,
-        categories: list[Category],
+        categories_text: str,
         per_category: int,
         taste_block: str,
         mood: str | None,
         avoid: list[str] | None = None,
     ) -> LLMRecommendationSet:
         payload = {
-            "categories": ", ".join(category.label for category in categories),
+            "categories": categories_text,
             "per_category": per_category,
             "taste_block": taste_block,
             "mood": mood or "none",
@@ -226,17 +246,21 @@ def _format_taste(favorites: list[tuple[Category, str]]) -> str:
     )
 
 
-def _underfilled(
+def _deficits(
     recommendations: list[LLMRecommendation],
     *,
     wanted: list[Category],
     per_category: int,
-) -> list[Category]:
-    """Categories that received fewer suggestions than the user asked for."""
+) -> dict[Category, int]:
+    """How many suggestions each category is still missing, skipping the full ones."""
     counts: dict[Category, int] = {}
     for item in recommendations:
         counts[item.category] = counts.get(item.category, 0) + 1
-    return [category for category in wanted if counts.get(category, 0) < per_category]
+    return {
+        category: per_category - counts.get(category, 0)
+        for category in wanted
+        if counts.get(category, 0) < per_category
+    }
 
 
 def _post_process(

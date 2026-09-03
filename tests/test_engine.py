@@ -5,11 +5,12 @@ from core.enums import Category
 from schemas.favorite import TasteProfile
 from schemas.recommendation import LLMRecommendation, LLMRecommendationSet
 from services.llm_engine import (
+    MAX_TOP_UP_ROUNDS,
     LLMEngineError,
     RecommendationEngine,
+    _deficits,
     _format_taste,
     _post_process,
-    _underfilled,
 )
 
 
@@ -53,12 +54,13 @@ def test_post_process_orders_categories_as_requested():
     assert [item.category for item in kept] == [Category.GAME, Category.BOOK]
 
 
-def test_underfilled_lists_categories_that_came_back_light():
+def test_deficits_counts_what_each_category_is_missing():
     kept = [recommendation(Category.GAME, "Ori"), recommendation(Category.BOOK, "Dune")]
-    assert _underfilled(kept, wanted=[Category.GAME, Category.BOOK], per_category=1) == []
-    assert _underfilled(kept, wanted=[Category.GAME, Category.ANIME], per_category=1) == [
-        Category.ANIME
-    ]
+    assert _deficits(kept, wanted=[Category.GAME, Category.BOOK], per_category=1) == {}
+    assert _deficits(kept, wanted=[Category.GAME, Category.ANIME], per_category=3) == {
+        Category.GAME: 2,
+        Category.ANIME: 3,
+    }
 
 
 def stub_engine(monkeypatch, responses):
@@ -113,6 +115,7 @@ def test_engine_tops_up_categories_the_model_skipped(monkeypatch):
                 recommendations=[
                     recommendation(Category.GAME, "Celeste"),
                     recommendation(Category.BOOK, "Piranesi"),
+                    recommendation(Category.BOOK, "Solaris"),
                 ],
             ),
         ],
@@ -124,11 +127,58 @@ def test_engine_tops_up_categories_the_model_skipped(monkeypatch):
         per_category=2,
     )
 
-    assert len(payloads) == 2
-    assert payloads[1]["categories"] == "Game, Book"
+    assert len(payloads) == 2  # everything was filled, so no third round
+    assert payloads[1]["categories"] == "Game (1 more needed), Book (2 more needed)"
     assert "Ori" in payloads[1]["avoid"]
-    assert {item.title for item in result.recommendations} == {"Ori", "Celeste", "Piranesi"}
+    assert {item.title for item in result.recommendations} == {
+        "Ori",
+        "Celeste",
+        "Piranesi",
+        "Solaris",
+    }
     assert result.summary == "Moody stuff."  # the first pass owns the summary
+
+
+def test_top_up_stops_once_a_round_adds_nothing(monkeypatch):
+    """The model repeating itself means it is out of ideas, so stop asking."""
+    engine, payloads = stub_engine(
+        monkeypatch,
+        [
+            LLMRecommendationSet(
+                summary="Moody stuff.",
+                recommendations=[recommendation(Category.GAME, "Ori")],
+            )
+        ],
+    )
+
+    result = engine.generate(
+        TasteProfile(games=["Hollow Knight"]), categories=[Category.GAME], per_category=5
+    )
+    assert len(payloads) == 2  # one first pass, one fruitless top-up
+    assert [item.title for item in result.recommendations] == ["Ori"]
+
+
+def test_top_up_rounds_are_bounded(monkeypatch):
+    """Each round adds one title, so only the round cap can stop the loop."""
+    titles = iter(["Celeste", "Ori", "Braid", "Gris", "Inside", "Limbo"])
+
+    engine = RecommendationEngine(Settings(openai_api_key="sk-test", _env_file=None))
+    payloads: list[dict] = []
+
+    class Chain:
+        def invoke(self, payload):
+            payloads.append(payload)
+            return LLMRecommendationSet(
+                summary="Moody stuff.", recommendations=[recommendation(Category.GAME, next(titles))]
+            )
+
+    monkeypatch.setattr(engine, "_chain", Chain())
+
+    result = engine.generate(
+        TasteProfile(games=["Hollow Knight"]), categories=[Category.GAME], per_category=5
+    )
+    assert len(payloads) == 1 + MAX_TOP_UP_ROUNDS
+    assert len(result.recommendations) == 1 + MAX_TOP_UP_ROUNDS
 
 
 def test_a_failing_top_up_still_returns_the_first_pass(monkeypatch):
